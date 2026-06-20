@@ -1,0 +1,25 @@
+[Unit]
+Description=etcd key-value store
+After=network.target
+
+[Service]
+Type=notify
+User=etcd
+# initial-cluster lista TODOS os membros (montado a partir do inventário).
+# Cada nó anuncia seu próprio IP para os pares e clientes.
+ExecStart=/usr/local/bin/etcd \
+  --name {{ inventory_hostname }} \
+  --data-dir /var/lib/etcd \
+  --listen-peer-urls http://{{ ansible_host }}:{{ etcd_peer_port }} \
+  --listen-client-urls http://{{ ansible_host }}:{{ etcd_client_port }},http://127.0.0.1:{{ etcd_client_port }} \
+  --advertise-client-urls http://{{ ansible_host }}:{{ etcd_client_port }} \
+  --initial-advertise-peer-urls http://{{ ansible_host }}:{{ etcd_peer_port }} \
+  --initial-cluster {% for h in groups['etcd'] %}{{ h }}=http://{{ hostvars[h].ansible_host }}:{{ etcd_peer_port }}{% if not loop.last %},{% endif %}{% endfor %} \
+  --initial-cluster-token {{ cluster_name }}-etcd \
+  --initial-cluster-state new
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

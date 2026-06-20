@@ -1,0 +1,65 @@
+# Configuração do Patroni para o nó {{ inventory_hostname }}.
+# Mesma lógica do lab, agora apontando para o cluster etcd real (3+ nós) e
+# usando os IPs reais das VMs vindos do inventário.
+
+scope: {{ patroni_scope }}
+name: {{ inventory_hostname }}
+
+restapi:
+  listen: 0.0.0.0:{{ patroni_api_port }}
+  connect_address: {{ ansible_host }}:{{ patroni_api_port }}
+
+# Aponta para TODOS os nós etcd (alta disponibilidade do DCS).
+etcd3:
+  hosts:
+{% for h in groups['etcd'] %}
+    - {{ hostvars[h].ansible_host }}:{{ etcd_client_port }}
+{% endfor %}
+
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+{% if synchronous_mode %}
+    synchronous_mode: true
+{% endif %}
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        max_connections: 200
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_level: replica
+        hot_standby: "on"
+        wal_keep_size: 256MB
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+  pg_hba:
+    - host replication {{ postgres_replication_user }} 0.0.0.0/0 scram-sha-256
+    - host all all 0.0.0.0/0 scram-sha-256
+
+postgresql:
+  listen: 0.0.0.0:{{ postgres_port }}
+  connect_address: {{ ansible_host }}:{{ postgres_port }}
+  data_dir: /var/lib/postgresql/data
+  bin_dir: /usr/lib/postgresql/{{ postgres_version }}/bin
+  pgpass: /tmp/pgpass
+  authentication:
+    replication:
+      username: {{ postgres_replication_user }}
+      password: "{{ postgres_replication_password }}"
+    superuser:
+      username: {{ postgres_superuser }}
+      password: "{{ postgres_superuser_password }}"
+  parameters:
+    unix_socket_directories: /var/run/postgresql
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false

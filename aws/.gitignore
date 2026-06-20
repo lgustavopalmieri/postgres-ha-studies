@@ -1,0 +1,13 @@
+# Estado local e backups (nunca versionar)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Variáveis com valores reais (podem conter dados sensíveis)
+terraform.tfvars
+*.auto.tfvars
+
+# Planos salvos
+*.tfplan
+crash.log

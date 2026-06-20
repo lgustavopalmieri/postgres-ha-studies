@@ -1,0 +1,73 @@
+# =====================================================================
+# .gitignore raiz — cobre os 3 projetos: lab/ (Docker), aws/ e on-prem/
+# (Terraform + Ansible).
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Terraform (aws/ e on-prem/terraform)
+# ---------------------------------------------------------------------
+# State: pode conter dados sensíveis e NUNCA deve ir para o git.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Diretório de plugins/módulos baixados pelo `terraform init`.
+**/.terraform/
+.terraform.lock.hcl
+
+# Planos salvos e logs de crash.
+*.tfplan
+crash.log
+crash.*.log
+
+# Variáveis com valores reais (host, CIDRs, e potencialmente segredos).
+# O *.example permanece versionado como referência.
+*.tfvars
+!*.tfvars.example
+*.auto.tfvars
+
+# ---------------------------------------------------------------------
+# Node / NestJS (lab/app-ha)
+# ---------------------------------------------------------------------
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Logs de gerenciadores de pacote
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---------------------------------------------------------------------
+# Variáveis de ambiente / segredos
+# ---------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# ---------------------------------------------------------------------
+# Ansible (on-prem/ansible)
+# ---------------------------------------------------------------------
+# Inventário é GERADO pelo Terraform (contém IPs do ambiente); não versionar.
+on-prem/ansible/inventory/hosts.ini
+*.retry
+# Senha do Ansible Vault, se existir.
+.vault_pass
+vault-password.txt
+
+# ---------------------------------------------------------------------
+# Sistema operacional / editores
+# ---------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/

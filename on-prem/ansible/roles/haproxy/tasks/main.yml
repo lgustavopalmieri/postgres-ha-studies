@@ -1,0 +1,42 @@
+---
+# Instala HAProxy (roteamento escrita/leitura) + keepalived (VIP de HA).
+#
+# Por que keepalived? Com 2 HAProxy, precisamos de UM endereço estável para a
+# aplicação. O keepalived mantém um IP virtual (VIP) que "flutua": fica no
+# HAProxy MASTER e, se ele cair, migra para o BACKUP automaticamente. Assim a
+# camada de entrada deixa de ser ponto único de falha.
+
+- name: Instalar HAProxy e keepalived
+  ansible.builtin.apt:
+    name:
+      - haproxy
+      - keepalived
+    state: present
+    update_cache: true
+
+- name: Renderizar a configuração do HAProxy
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: "0644"
+    validate: haproxy -c -f %s
+  notify: restart haproxy
+
+- name: Renderizar a configuração do keepalived
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    mode: "0644"
+  notify: restart keepalived
+
+- name: Habilitar e iniciar HAProxy
+  ansible.builtin.systemd:
+    name: haproxy
+    enabled: true
+    state: started
+
+- name: Habilitar e iniciar keepalived
+  ansible.builtin.systemd:
+    name: keepalived
+    enabled: true
+    state: started

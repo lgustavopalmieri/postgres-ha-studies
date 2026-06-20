@@ -1,0 +1,26 @@
+# Copie para terraform.tfvars e ajuste. NÃO comite terraform.tfvars se ele
+# contiver qualquer valor sensível. Aqui não há senha (o RDS a gera), mas é
+# boa prática manter o .tfvars fora do versionamento.
+
+aws_region   = "us-east-1"
+project_name = "pg-ha"
+environment  = "prod"
+
+# Rede
+vpc_cidr = "10.0.0.0/16"
+az_count = 3
+
+# Banco
+db_name               = "appdb"
+db_master_username    = "postgres"
+engine_version        = "16.4"
+instance_class        = "db.r6g.large"
+replica_count         = 2
+backup_retention_days = 14
+deletion_protection   = true
+# Em produção mantenha false (garante um snapshot final ao destruir).
+# Em estudo, true permite um `terraform destroy` limpo e sem custo residual.
+skip_final_snapshot   = false
+
+# Restrinja ao CIDR real das subnets/serviços da sua aplicação.
+app_ingress_cidrs = ["10.0.0.0/16"]

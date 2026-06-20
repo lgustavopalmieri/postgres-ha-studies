@@ -1,0 +1,169 @@
+# =============================================================================
+# Cluster PostgreSQL de ALTA DISPONIBILIDADE com separação leitura/escrita.
+#
+# Topologia:
+#   etcd            -> consenso/estado do cluster (quem é o líder)
+#   pg1..pg4        -> 4 nós PostgreSQL gerenciados pelo Patroni
+#                      (1 vira PRIMÁRIO por eleição, os outros 3 são RÉPLICAS)
+#   haproxy         -> entrada da aplicação:
+#                        :5000 escrita (primário)  |  :5001 leitura (réplicas)
+#
+# A aplicação SÓ conversa com o HAProxy. Os papéis primário/réplica são
+# decididos em runtime pelo Patroni — você não fixa isso aqui.
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # etcd: armazena o estado do cluster. O Patroni usa para eleger o líder e
+  # guardar a configuração distribuída (DCS). Sem etcd, não há cluster.
+  # ---------------------------------------------------------------------------
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.13
+    container_name: etcd
+    networks: [pgnet]
+    environment:
+      ETCD_NAME: etcd
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd:2380
+      ETCD_INITIAL_CLUSTER: etcd=http://etcd:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: pg-etcd-token
+      # Afrouxa os limites de tempo do etcd para tolerar picos de I/O no boot
+      # (quando os 4 Postgres fazem initdb/basebackup ao mesmo tempo).
+      ETCD_HEARTBEAT_INTERVAL: "1000"
+      ETCD_ELECTION_TIMEOUT: "5000"
+    # Em ambiente de ESTUDO, guardamos os dados do etcd em tmpfs (RAM). Isso
+    # elimina o gargalo de 'fsync' lento em disco que causava os timeouts
+    # ("slow fdatasync") durante o boot. NÃO faça isso em produção: ao
+    # reiniciar, o etcd perde o estado.
+    tmpfs:
+      - /etcd-data
+    command: ["etcd", "--data-dir=/etcd-data"]
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Nós PostgreSQL + Patroni. Os 4 usam a MESMA imagem e config; o hostname
+  # (pg1..pg4) é o que diferencia cada nó. O Patroni faz o resto.
+  # ---------------------------------------------------------------------------
+  pg1:
+    build: ./patroni
+    hostname: pg1
+    container_name: pg1
+    networks: [pgnet]
+    restart: unless-stopped
+    ports:
+      - "5432:5432"   # acesso DIRETO a este nó (ex.: DBeaver) -> localhost:5432
+    volumes:
+      - pg1_data:/var/lib/postgresql/data
+    depends_on:
+      etcd:
+        condition: service_healthy
+
+  pg2:
+    build: ./patroni
+    hostname: pg2
+    container_name: pg2
+    networks: [pgnet]
+    restart: unless-stopped
+    ports:
+      - "5433:5432"   # acesso DIRETO a este nó (ex.: DBeaver) -> localhost:5433
+    volumes:
+      - pg2_data:/var/lib/postgresql/data
+    depends_on:
+      etcd:
+        condition: service_healthy
+
+  pg3:
+    build: ./patroni
+    hostname: pg3
+    container_name: pg3
+    networks: [pgnet]
+    restart: unless-stopped
+    ports:
+      - "5434:5432"   # acesso DIRETO a este nó (ex.: DBeaver) -> localhost:5434
+    volumes:
+      - pg3_data:/var/lib/postgresql/data
+    depends_on:
+      etcd:
+        condition: service_healthy
+
+  pg4:
+    build: ./patroni
+    hostname: pg4
+    container_name: pg4
+    networks: [pgnet]
+    restart: unless-stopped
+    ports:
+      - "5435:5432"   # acesso DIRETO a este nó (ex.: DBeaver) -> localhost:5435
+    volumes:
+      - pg4_data:/var/lib/postgresql/data
+    depends_on:
+      etcd:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # HAProxy: o "endereço único" da sua aplicação.
+  #   localhost:5000 -> escrita   | localhost:5001 -> leitura
+  #   localhost:7000 -> painel de status do HAProxy
+  # ---------------------------------------------------------------------------
+  haproxy:
+    image: haproxy:2.9
+    container_name: haproxy
+    networks: [pgnet]
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "5000:5000"   # ESCRITA  (primário)
+      - "5001:5001"   # LEITURA  (réplicas)
+      - "7000:7000"   # painel de stats
+    depends_on:
+      - pg1
+      - pg2
+      - pg3
+      - pg4
+
+  # ---------------------------------------------------------------------------
+  # API NestJS: conecta no HAProxy (não nos bancos direto).
+  #   - escrita -> haproxy:5000  | leitura -> haproxy:5001
+  #   - no boot, aplica as migrations no primário.
+  # Acesse em http://localhost:3000
+  # ---------------------------------------------------------------------------
+  api:
+    build: ./app-ha
+    container_name: api
+    networks: [pgnet]
+    # A API depende do cluster estar aceitando conexões. Como o depends_on só
+    # espera o HAProxy INICIAR (não o Postgres eleger líder), a API pode subir
+    # cedo demais na primeira vez. Com restart, ela tenta de novo até conectar.
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      DB_USER: postgres
+      DB_PASSWORD: postgres_pwd
+      DB_NAME: postgres
+      DB_WRITE_HOST: haproxy
+      DB_WRITE_PORT: "5000"
+      DB_READ_HOST: haproxy
+      DB_READ_PORT: "5001"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - haproxy
+
+networks:
+  pgnet:
+    driver: bridge
+
+# Volumes nomeados: garantem que os dados sobrevivam a reinícios dos containers.
+volumes:
+  pg1_data:
+  pg2_data:
+  pg3_data:
+  pg4_data:
