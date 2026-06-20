@@ -1,6 +1,6 @@
 # PostgreSQL HA: 1 escrita + 3 leituras (Patroni + etcd + HAProxy)
 
-Ambiente de estudo em Docker com **um primário (escrita)** e **três réplicas (leitura)**, com **failover automático**. O objetivo aqui é você entender *como* a replicação funciona e *como sua aplicação consome* esse cluster.
+Ambiente de estudo em Docker com **um primário (escrita)** e **três réplicas (leitura)**, com **failover automático**. O objetivo aqui é entender *como* a replicação funciona e *como sua aplicação consome* esse cluster.
 
 ## A arquitetura em uma imagem mental
 
